@@ -3,8 +3,5 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1"
-healthcheckPath = "/v1/health"
-healthcheckTimeout = 300
-restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 3
+startCommand = "pip list | grep multi && python -c 'import app; print(\"OK\")' 2>&1; sleep 30"
+restartPolicyType = "never"
