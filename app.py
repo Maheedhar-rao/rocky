@@ -392,19 +392,21 @@ async def parse_statement(req: ParseRequest):
 
 @app.get("/v1/health", response_model=HealthResponse)
 async def health():
+    """Health check — returns immediately without loading model.
+    Model is loaded lazily on first /v1/parse request."""
     model_loaded = False
     model_version = "none"
 
     try:
-        from predict import get_parser
-        p = get_parser()
-        model_loaded = True
-        model_version = p.version
-    except Exception:
+        from predict import _parser
+        if _parser is not None:
+            model_loaded = True
+            model_version = _parser.version
+    except (ImportError, AttributeError):
         pass
 
     return HealthResponse(
-        status="ok" if model_loaded else "degraded",
+        status="ok",
         model_loaded=model_loaded,
         model_version=model_version,
         traffic_pct=PARSER_TRAFFIC_PCT,
