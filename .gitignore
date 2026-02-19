@@ -1,0 +1,32 @@
+# Model weights (downloaded at startup from Supabase Storage)
+models/statement_parser/*.safetensors
+models/statement_parser/preprocessor_config.json
+models/credit_debit/
+
+# Environment
+.env
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Data (runtime — PDFs, labels, training data, feedback)
+data/pdfs/
+data/pages/
+data/labels/
+data/training/
+data/feedback/
+data/monitor_history/
+*.csv
+
+# Generated reports
+spending_report.html
+spending_report.json
+
+# Logs
+*.log
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

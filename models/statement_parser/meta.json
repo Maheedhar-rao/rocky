@@ -1,0 +1,61 @@
+{
+  "version": "v1771449250",
+  "trained_at": "2026-02-18T21:14:10.997321+00:00",
+  "base_model": "microsoft/layoutlmv3-base",
+  "num_labels": 9,
+  "bio_tags": [
+    "O",
+    "B-DATE",
+    "I-DATE",
+    "B-DESC",
+    "I-DESC",
+    "B-AMOUNT",
+    "I-AMOUNT",
+    "B-BALANCE",
+    "I-BALANCE"
+  ],
+  "tag2id": {
+    "O": 0,
+    "B-DATE": 1,
+    "I-DATE": 2,
+    "B-DESC": 3,
+    "I-DESC": 4,
+    "B-AMOUNT": 5,
+    "I-AMOUNT": 6,
+    "B-BALANCE": 7,
+    "I-BALANCE": 8
+  },
+  "epochs": 5,
+  "batch_size": 4,
+  "learning_rate": 5e-05,
+  "train_samples": 373,
+  "test_samples": 67,
+  "train_pdfs": 64,
+  "test_pdfs": 12,
+  "min_alignment": 80.0,
+  "claude_only": true,
+  "evaluation": {
+    "best_f1": 0.9494,
+    "per_tag": {}
+  },
+  "class_weights": {
+    "O": 0.18,
+    "B-DATE": 2.29,
+    "I-DATE": 10.0,
+    "B-DESC": 2.82,
+    "I-DESC": 0.49,
+    "B-AMOUNT": 2.31,
+    "I-AMOUNT": 1.0,
+    "B-BALANCE": 10.0,
+    "I-BALANCE": 1.0
+  },
+  "tag_distribution": {
+    "O": 96343,
+    "B-DATE": 7390,
+    "B-DESC": 6007,
+    "I-DESC": 34388,
+    "B-AMOUNT": 7347,
+    "I-DATE": 35,
+    "B-BALANCE": 978
+  }
+}
