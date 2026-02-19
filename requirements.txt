@@ -1,6 +1,7 @@
 # torch installed separately in Dockerfile for CPU-only build
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
 transformers>=4.35.0
 supabase>=2.0.0
 anthropic>=0.39.0

@@ -3,6 +3,8 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python -c 'print(\"ALIVE\"); import app; print(\"APP IMPORTED\")' 2>&1 || echo 'IMPORT FAILED'"
+startCommand = "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1"
+healthcheckPath = "/v1/health"
+healthcheckTimeout = 300
 restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 1
+restartPolicyMaxRetries = 3
