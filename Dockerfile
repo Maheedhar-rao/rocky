@@ -13,13 +13,15 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy service files
-COPY predict.py app.py download_model.py upload_model.py \
-     credit_debit_model.py spending_demo.py \
-     align_labels.py retrain.py train.py ./
+# Copy all Python source files
+COPY *.py ./
 
-# Model + data directories (weights downloaded at startup, data persisted via volume)
-RUN mkdir -p /app/models/statement_parser /app/models/credit_debit /app/data
+# Copy model weights (baked into image — no Supabase download needed)
+COPY models/statement_parser/ /app/models/statement_parser/
+COPY models/credit_debit/ /app/models/credit_debit/
+
+# Data directory (persisted via volume mount)
+RUN mkdir -p /app/data
 
 COPY start.sh .
 RUN chmod +x start.sh
