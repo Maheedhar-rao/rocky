@@ -1,4 +1,4 @@
-# Model weights (downloaded at startup from Supabase Storage)
+# Model weights (downloaded during Docker build from GitHub Releases)
 models/statement_parser/*.safetensors
 models/statement_parser/preprocessor_config.json
 models/credit_debit/
