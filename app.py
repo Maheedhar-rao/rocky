@@ -1112,6 +1112,18 @@ async def feedback_stats():
     }
 
 
+@app.on_event("startup")
+async def preload_model():
+    """Preload LayoutLMv3 model at startup so first request is fast."""
+    try:
+        from predict import get_parser
+        logger.info("Preloading LayoutLMv3 model...")
+        parser = get_parser()
+        logger.info(f"Model loaded: {parser.version}")
+    except Exception as e:
+        logger.warning(f"Model preload failed (will retry on first request): {e}")
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
