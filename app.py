@@ -121,6 +121,29 @@ CLAUDE_VISION_PROMPT = """Extract ALL transactions from this bank statement page
 Only return valid JSON. amount is positive for credits, negative for debits."""
 
 
+def _try_salvage_truncated_json(text: str) -> Optional[dict]:
+    """Try to recover partial transactions from truncated JSON.
+
+    When Claude hits max_tokens mid-response, the JSON is incomplete.
+    We find the last complete transaction object and close the array/object.
+    """
+    # Find the last complete }, which ends a transaction object
+    last_complete = text.rfind("},")
+    if last_complete == -1:
+        last_complete = text.rfind("}")
+    if last_complete == -1:
+        return None
+
+    truncated = text[:last_complete + 1]
+    # Close the transactions array and outer object
+    truncated += "]}"
+
+    try:
+        return json.loads(truncated)
+    except json.JSONDecodeError:
+        return None
+
+
 def _parse_with_claude_vision(pdf_bytes: bytes) -> dict:
     """Fallback: parse statement using Claude Vision."""
     from pdf2image import convert_from_bytes
@@ -138,7 +161,7 @@ def _parse_with_claude_vision(pdf_bytes: bytes) -> dict:
         img_b64 = base64.standard_b64encode(buf.getvalue()).decode()
 
         response = client.messages.create(
-            model="claude-sonnet-4-5-20250514",
+            model="claude-3-haiku-20240307",
             max_tokens=4096,
             messages=[{
                 "role": "user",
@@ -148,6 +171,9 @@ def _parse_with_claude_vision(pdf_bytes: bytes) -> dict:
                 ],
             }],
         )
+
+        if response.stop_reason == "max_tokens":
+            logger.warning(f"Claude Vision response truncated on page {page_idx} (hit max_tokens)")
 
         text = response.content[0].text.strip()
         if text.startswith("```"):
@@ -164,7 +190,20 @@ def _parse_with_claude_vision(pdf_bytes: bytes) -> dict:
                 page_txns.append(t)
                 all_transactions.append(t)
         except json.JSONDecodeError:
-            logger.warning(f"Claude Vision JSON parse error on page {page_idx}")
+            # If truncated, try to salvage partial JSON by closing brackets
+            if response.stop_reason == "max_tokens":
+                salvaged = _try_salvage_truncated_json(text)
+                if salvaged:
+                    for t in salvaged.get("transactions", []):
+                        t["page"] = page_idx
+                        t["confidence"] = 0.8
+                        page_txns.append(t)
+                        all_transactions.append(t)
+                    logger.info(f"Salvaged {len(page_txns)} transactions from truncated response on page {page_idx}")
+                else:
+                    logger.warning(f"Claude Vision JSON parse error on page {page_idx} (truncated, unsalvageable)")
+            else:
+                logger.warning(f"Claude Vision JSON parse error on page {page_idx}")
 
         per_page_labels.append({"transactions": page_txns, "page_index": page_idx})
         total_cost += CLAUDE_COST_PER_PAGE
@@ -649,6 +688,395 @@ async def analyze_statements(files: list[UploadFile] = File(...)):
     return {"summary": summary, "transactions": clean_txns}
 
 
+@app.post("/v1/compare")
+async def compare_parsers(files: list[UploadFile] = File(...)):
+    """Run both ML model and Claude Vision on the same PDFs, return side-by-side results."""
+    from spending_demo import categorize_transaction, parse_date, infer_year_from_pdf, compute_summary
+    from predict import get_parser
+
+    parser = get_parser()
+
+    def _enrich_transactions(raw_txns: list, filename: str, year_hint: int, end_month: int) -> list:
+        enriched = []
+        for txn in raw_txns:
+            date_str = txn.get("date", "")
+            dt = parse_date(date_str, year_hint, statement_end_month=end_month)
+            category = categorize_transaction(txn)
+            enriched.append({
+                **txn,
+                "parsed_date": dt,
+                "month_key": dt.strftime("%Y-%m") if dt else "unknown",
+                "category": category,
+                "source_file": filename,
+            })
+        return enriched
+
+    ml_transactions = []
+    claude_transactions = []
+    ml_time_ms = 0
+    claude_time_ms = 0
+
+    for f in files:
+        pdf_bytes = await f.read()
+
+        # Infer year
+        year_hint, end_month = None, None
+        match = re.search(r"20[2-3]\d", f.filename or "")
+        if match:
+            year_hint = int(match.group())
+        if not year_hint:
+            year_hint, end_month = infer_year_from_pdf(pdf_bytes)
+
+        # ML model
+        t0 = time.time()
+        ml_result = parser.parse_pdf(pdf_bytes)
+        ml_time_ms += int((time.time() - t0) * 1000)
+        ml_transactions.extend(_enrich_transactions(ml_result.transactions, f.filename, year_hint, end_month))
+
+        # Claude Vision
+        t0 = time.time()
+        cv_result = _parse_with_claude_vision(pdf_bytes)
+        claude_time_ms += int((time.time() - t0) * 1000)
+        cv_txns = cv_result.get("transactions", [])
+        claude_transactions.extend(_enrich_transactions(cv_txns, f.filename, year_hint, end_month))
+
+    ml_transactions.sort(key=lambda t: t["parsed_date"] or datetime.min)
+    claude_transactions.sort(key=lambda t: t["parsed_date"] or datetime.min)
+
+    ml_summary = compute_summary(ml_transactions)
+    claude_summary = compute_summary(claude_transactions)
+
+    def _clean(txns):
+        return [{k: v for k, v in t.items() if k != "parsed_date"} for t in txns]
+
+    return {
+        "ml": {"summary": ml_summary, "transactions": _clean(ml_transactions), "time_ms": ml_time_ms},
+        "claude": {"summary": claude_summary, "transactions": _clean(claude_transactions), "time_ms": claude_time_ms},
+    }
+
+
+COMPARE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model Comparison — ML vs Claude Vision</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f7; color: #1d1d1f; line-height: 1.5; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  header { text-align: center; margin-bottom: 32px; }
+  header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: #86868b; font-size: 14px; }
+
+  .upload-area { background: white; border: 2px dashed #ccc; border-radius: 12px; padding: 40px; text-align: center; cursor: pointer; transition: border-color 0.2s; margin-bottom: 24px; }
+  .upload-area:hover, .upload-area.dragover { border-color: #007aff; background: #f0f7ff; }
+  .upload-area input { display: none; }
+  .file-list { margin-top: 12px; font-size: 13px; color: #555; }
+  .file-list span { background: #e8f0fe; padding: 3px 10px; border-radius: 12px; margin: 2px; display: inline-block; }
+  .btn { background: #007aff; color: white; border: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 16px; }
+  .btn:disabled { background: #ccc; cursor: default; }
+  .btn:hover:not(:disabled) { background: #0056b3; }
+
+  .spinner { display: none; margin: 24px auto; text-align: center; }
+  .spinner.active { display: block; }
+  .spinner .dot { display: inline-block; width: 10px; height: 10px; background: #007aff; border-radius: 50%; margin: 0 4px; animation: bounce 1.4s infinite ease-in-out both; }
+  .spinner .dot:nth-child(1) { animation-delay: -0.32s; }
+  .spinner .dot:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+  .progress-text { text-align: center; color: #86868b; font-size: 14px; margin-top: 8px; }
+
+  #report { display: none; }
+
+  /* Side by side layout */
+  .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .side-by-side { grid-template-columns: 1fr; } }
+
+  .panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .panel h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+  .badge-ml { background: #e8f5e9; color: #2e7d32; }
+  .badge-claude { background: #e3f2fd; color: #1565c0; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat { text-align: center; padding: 12px; background: #f9f9fb; border-radius: 8px; }
+  .stat .val { font-size: 22px; font-weight: 700; }
+  .stat .lbl { font-size: 11px; color: #86868b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .positive { color: #34c759; }
+  .negative { color: #ff3b30; }
+
+  /* Diff banner */
+  .diff-banner { background: #fff3e0; border: 1px solid #ffe0b2; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+  .diff-banner h2 { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+  .diff-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .diff-item { text-align: center; }
+  .diff-item .val { font-size: 20px; font-weight: 700; }
+  .diff-item .lbl { font-size: 11px; color: #86868b; text-transform: uppercase; }
+  .match { color: #34c759; }
+  .mismatch { color: #ff9800; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #e5e5ea; color: #86868b; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f2f2f7; }
+  tr:hover { background: #f9f9fb; }
+  .money { font-variant-numeric: tabular-nums; text-align: right; }
+  th.money { text-align: right; }
+
+  footer { text-align: center; color: #86868b; font-size: 12px; margin-top: 32px; padding-bottom: 24px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>ML Model vs Claude Vision</h1>
+    <p class="subtitle">Upload bank statements to compare LayoutLMv3 against Claude Vision side-by-side</p>
+  </header>
+
+  <div class="upload-area" id="dropzone">
+    <p style="font-size:36px;">&#9878;</p>
+    <p id="dropLabel">Drop bank statement PDFs here or click to upload</p>
+    <p style="font-size:13px;color:#999;margin-top:8px;">Both models will parse the same files</p>
+    <input type="file" id="fileInput" accept=".pdf" multiple>
+    <div class="file-list" id="fileList"></div>
+  </div>
+  <div style="text-align:center;">
+    <button class="btn" id="compareBtn" disabled onclick="runCompare()">Compare Models</button>
+  </div>
+
+  <div class="spinner" id="spinner"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+  <p class="progress-text" id="progressText"></p>
+
+  <div id="report">
+    <!-- Diff banner -->
+    <div class="diff-banner" id="diffBanner"></div>
+
+    <!-- Side by side summaries -->
+    <div class="side-by-side">
+      <div class="panel" id="mlPanel"></div>
+      <div class="panel" id="claudePanel"></div>
+    </div>
+
+    <!-- Side by side charts -->
+    <div class="side-by-side">
+      <div class="panel">
+        <h2><span class="badge badge-ml">ML</span> Monthly Income vs Expenses</h2>
+        <canvas id="mlMonthlyChart" height="120"></canvas>
+      </div>
+      <div class="panel">
+        <h2><span class="badge badge-claude">Claude</span> Monthly Income vs Expenses</h2>
+        <canvas id="claudeMonthlyChart" height="120"></canvas>
+      </div>
+    </div>
+
+    <!-- Side by side category charts -->
+    <div class="side-by-side">
+      <div class="panel">
+        <h2><span class="badge badge-ml">ML</span> Spending by Category</h2>
+        <canvas id="mlCategoryChart"></canvas>
+      </div>
+      <div class="panel">
+        <h2><span class="badge badge-claude">Claude</span> Spending by Category</h2>
+        <canvas id="claudeCategoryChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Side by side transaction tables -->
+    <div class="side-by-side">
+      <div class="panel">
+        <h2><span class="badge badge-ml">ML</span> Transactions (<span id="mlTxnCount">0</span>)</h2>
+        <div style="max-height:500px;overflow-y:auto;">
+          <table><thead><tr><th>Date</th><th>Description</th><th class="money">Amount</th><th>Type</th></tr></thead>
+          <tbody id="mlTxnBody"></tbody></table>
+        </div>
+      </div>
+      <div class="panel">
+        <h2><span class="badge badge-claude">Claude</span> Transactions (<span id="claudeTxnCount">0</span>)</h2>
+        <div style="max-height:500px;overflow-y:auto;">
+          <table><thead><tr><th>Date</th><th>Description</th><th class="money">Amount</th><th>Type</th></tr></thead>
+          <tbody id="claudeTxnBody"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <footer>LayoutLMv3 Statement Parser &mdash; Model Comparison</footer>
+  </div>
+</div>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const compareBtn = document.getElementById('compareBtn');
+let selectedFiles = [];
+
+dropzone.addEventListener('click', () => fileInput.click());
+['dragover','dragenter'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('dragover'); }));
+['dragleave','drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('dragover'); }));
+dropzone.addEventListener('drop', ev => {
+  addFiles(Array.from(ev.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.pdf')));
+});
+fileInput.addEventListener('change', () => addFiles(Array.from(fileInput.files)));
+
+function addFiles(files) {
+  selectedFiles = [...selectedFiles, ...files];
+  document.getElementById('fileList').innerHTML = selectedFiles.map(f => '<span>' + f.name + '</span>').join(' ');
+  document.getElementById('dropLabel').textContent = selectedFiles.length + ' PDF(s) selected';
+  compareBtn.disabled = selectedFiles.length === 0;
+}
+
+function fmt(val) {
+  if (val == null) return '$0.00';
+  const sign = val < 0 ? '-' : '';
+  return sign + '$' + Math.abs(val).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function pctDiff(a, b) {
+  if (b === 0 && a === 0) return '0%';
+  if (b === 0) return 'N/A';
+  return ((a - b) / Math.abs(b) * 100).toFixed(1) + '%';
+}
+
+async function runCompare() {
+  compareBtn.disabled = true;
+  document.getElementById('spinner').classList.add('active');
+  document.getElementById('progressText').textContent = 'Running both models on ' + selectedFiles.length + ' PDF(s)... Claude Vision takes ~10s/page.';
+  document.getElementById('report').style.display = 'none';
+
+  const formData = new FormData();
+  selectedFiles.forEach(f => formData.append('files', f));
+
+  try {
+    const resp = await fetch('/v1/compare', { method: 'POST', body: formData });
+    if (!resp.ok) throw new Error('Server error: ' + resp.status);
+    const data = await resp.json();
+    renderComparison(data);
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+
+  document.getElementById('spinner').classList.remove('active');
+  document.getElementById('progressText').textContent = '';
+  compareBtn.disabled = false;
+}
+
+function renderComparison(data) {
+  const ml = data.ml, cl = data.claude;
+  const ms = ml.summary, cs = cl.summary;
+  document.getElementById('report').style.display = 'block';
+
+  // Diff banner
+  const txnDiff = Math.abs((ml.transactions||[]).length - (cl.transactions||[]).length);
+  const incDiff = Math.abs((ms.total_income||0) - (cs.total_income||0));
+  const expDiff = Math.abs((ms.total_expenses||0) - (cs.total_expenses||0));
+  const txnMatch = txnDiff === 0;
+  const incMatch = incDiff < 1;
+  const expMatch = expDiff < 1;
+
+  document.getElementById('diffBanner').innerHTML = `
+    <h2>Comparison Summary</h2>
+    <div class="diff-grid">
+      <div class="diff-item">
+        <div class="val ${txnMatch ? 'match' : 'mismatch'}">${txnDiff === 0 ? 'Match' : txnDiff + ' diff'}</div>
+        <div class="lbl">Transaction Count</div>
+        <div style="font-size:12px;color:#666;">${(ml.transactions||[]).length} vs ${(cl.transactions||[]).length}</div>
+      </div>
+      <div class="diff-item">
+        <div class="val ${incMatch ? 'match' : 'mismatch'}">${incMatch ? 'Match' : fmt(incDiff) + ' diff'}</div>
+        <div class="lbl">Total Income</div>
+        <div style="font-size:12px;color:#666;">${fmt(ms.total_income)} vs ${fmt(cs.total_income)}</div>
+      </div>
+      <div class="diff-item">
+        <div class="val ${expMatch ? 'match' : 'mismatch'}">${expMatch ? 'Match' : fmt(expDiff) + ' diff'}</div>
+        <div class="lbl">Total Expenses</div>
+        <div style="font-size:12px;color:#666;">${fmt(ms.total_expenses)} vs ${fmt(cs.total_expenses)}</div>
+      </div>
+      <div class="diff-item">
+        <div class="val" style="color:#007aff;">${ml.time_ms}ms vs ${cl.time_ms}ms</div>
+        <div class="lbl">Speed</div>
+        <div style="font-size:12px;color:#666;">ML is ${(cl.time_ms / Math.max(ml.time_ms, 1)).toFixed(1)}x faster</div>
+      </div>
+    </div>
+  `;
+
+  // Panel summaries
+  function renderPanel(id, label, badgeClass, summary, txns, timeMs) {
+    const s = summary;
+    const netClass = (s.net_cashflow||0) >= 0 ? 'positive' : 'negative';
+    document.getElementById(id).innerHTML = `
+      <h2><span class="badge ${badgeClass}">${label}</span> Summary <span style="font-size:13px;color:#999;font-weight:400;">(${timeMs}ms)</span></h2>
+      <div class="stats-row">
+        <div class="stat"><div class="val positive">${fmt(s.total_income)}</div><div class="lbl">Income</div></div>
+        <div class="stat"><div class="val negative">${fmt(s.total_expenses)}</div><div class="lbl">Expenses</div></div>
+        <div class="stat"><div class="val ${netClass}">${fmt(s.net_cashflow)}</div><div class="lbl">Net</div></div>
+      </div>
+      <div class="stats-row">
+        <div class="stat"><div class="val">${(txns||[]).length}</div><div class="lbl">Transactions</div></div>
+        <div class="stat"><div class="val">${s.months_analyzed||0}</div><div class="lbl">Months</div></div>
+        <div class="stat"><div class="val">${fmt(s.avg_monthly_spend)}</div><div class="lbl">Avg/Month</div></div>
+      </div>
+    `;
+  }
+  renderPanel('mlPanel', 'LayoutLMv3', 'badge-ml', ms, ml.transactions, ml.time_ms);
+  renderPanel('claudePanel', 'Claude Vision', 'badge-claude', cs, cl.transactions, cl.time_ms);
+
+  // Monthly charts
+  const catColors = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#c9cbcf','#7bc043','#f37735','#00aba9'];
+
+  function renderMonthlyChart(canvasId, summary) {
+    const months = summary.months || [];
+    const labels = months.map(m => { const [y,mo]=m.split('-'); return new Date(parseInt(y),parseInt(mo)-1).toLocaleString('default',{month:'short',year:'numeric'}); });
+    new Chart(document.getElementById(canvasId), {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Income', data: months.map(m => summary.monthly_income[m]||0), backgroundColor: '#34c759', borderRadius: 4 },
+          { label: 'Expenses', data: months.map(m => summary.monthly_expenses[m]||0), backgroundColor: '#ff3b30', borderRadius: 4 },
+        ]
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, ticks: { callback: v => '$'+v.toLocaleString() } } } }
+    });
+  }
+  renderMonthlyChart('mlMonthlyChart', ms);
+  renderMonthlyChart('claudeMonthlyChart', cs);
+
+  function renderCategoryChart(canvasId, summary) {
+    const labels = Object.keys(summary.category_totals||{});
+    const data = Object.values(summary.category_totals||{});
+    new Chart(document.getElementById(canvasId), {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data, backgroundColor: catColors.slice(0, labels.length), borderWidth: 2, borderColor: '#fff' }] },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+    });
+  }
+  renderCategoryChart('mlCategoryChart', ms);
+  renderCategoryChart('claudeCategoryChart', cs);
+
+  // Transaction tables
+  function renderTxnTable(bodyId, countId, txns) {
+    document.getElementById(countId).textContent = (txns||[]).length;
+    document.getElementById(bodyId).innerHTML = (txns||[]).map(t => `
+      <tr>
+        <td>${t.date||''}</td>
+        <td title="${t.description||''}">${(t.description||'').substring(0,40)}</td>
+        <td class="money" style="color:${t.type==='credit'?'#34c759':'#ff3b30'}">${fmt(t.amount)}</td>
+        <td>${t.type||''}</td>
+      </tr>`).join('');
+  }
+  renderTxnTable('mlTxnBody', 'mlTxnCount', ml.transactions);
+  renderTxnTable('claudeTxnBody', 'claudeTxnCount', cl.transactions);
+
+  document.getElementById('report').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body></html>"""
+
+
+@app.get("/compare", response_class=HTMLResponse)
+async def compare_ui():
+    return COMPARE_HTML
+
+
 SPENDING_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -752,6 +1180,9 @@ SPENDING_HTML = """<!DOCTYPE html>
       <h2>Top Merchants</h2>
       <table><thead><tr><th>Merchant</th><th>Transactions</th><th class="money">Total Spent</th></tr></thead><tbody id="merchantBody"></tbody></table>
     </div>
+    <div style="text-align:center;margin-top:24px;">
+      <button class="btn" id="downloadBtn" style="background:#34c759;" onclick="downloadJSON()">Download Analysis JSON</button>
+    </div>
     <footer>Powered by LayoutLMv3 Statement Parser</footer>
   </div>
 </div>
@@ -762,6 +1193,7 @@ const fileInput = document.getElementById('fileInput');
 const analyzeBtn = document.getElementById('analyzeBtn');
 const fileList = document.getElementById('fileList');
 let selectedFiles = [];
+let lastAnalysisData = null;
 
 dropzone.addEventListener('click', () => fileInput.click());
 ['dragover','dragenter'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('dragover'); }));
@@ -797,6 +1229,7 @@ async function analyze() {
     const resp = await fetch('/v1/analyze', { method: 'POST', body: formData });
     if (!resp.ok) throw new Error('Server error: ' + resp.status);
     const data = await resp.json();
+    lastAnalysisData = data;
     renderReport(data.summary, data.transactions);
   } catch(e) {
     alert('Error: ' + e.message);
@@ -897,6 +1330,17 @@ function renderReport(summary, transactions) {
 
   // Scroll to report
   document.getElementById('report').scrollIntoView({ behavior: 'smooth' });
+}
+
+function downloadJSON() {
+  if (!lastAnalysisData) return;
+  const blob = new Blob([JSON.stringify(lastAnalysisData, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'statement_analysis.json';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 </script>
 </body></html>"""

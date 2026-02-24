@@ -1,0 +1,511 @@
+{
+  "total_pdfs": 80,
+  "total_pages_est": 663,
+  "banks_covered": 22,
+  "bank_counts": {
+    "Wells Fargo": 8,
+    "Bank of America": 8,
+    "Chase": 6,
+    "Truist": 5,
+    "Navy Federal": 5,
+    "PNC": 5,
+    "TD Bank": 4,
+    "Capital One": 4,
+    "Regions": 4,
+    "Credit Union": 4,
+    "US Bank": 3,
+    "Zions / NBAZ": 3,
+    "Community Bank": 3,
+    "Huntington": 2,
+    "Citizens": 2,
+    "USAA": 2,
+    "BMO / Harris": 2,
+    "KeyBank": 2,
+    "First Horizon": 2,
+    "Fifth Third": 2,
+    "Citibank": 2,
+    "Comerica": 2
+  },
+  "pdfs": [
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6225266227954650841_February_Statement.pdf",
+      "stem": "jf_6225266227954650841_February_Statement",
+      "bank": "Wells Fargo",
+      "pages": 17
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6126873680823405198_WF_Bus_10_24.pdf",
+      "stem": "jf_6126873680823405198_WF_Bus_10_24",
+      "bank": "Wells Fargo",
+      "pages": 13
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6156388565159978099_103124_WellsFargo.pdf",
+      "stem": "jf_6156388565159978099_103124_WellsFargo",
+      "bank": "Wells Fargo",
+      "pages": 20
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6158011680996924582_013125_WellsFargo.pdf",
+      "stem": "jf_6158011680996924582_013125_WellsFargo",
+      "bank": "Wells Fargo",
+      "pages": 7
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6217612414328026305_12-8673-DEC-2024.pdf",
+      "stem": "jf_6217612414328026305_12-8673-DEC-2024",
+      "bank": "Wells Fargo",
+      "pages": 9
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6210993421612537275_WF_Bus_02_25.pdf",
+      "stem": "jf_6210993421612537275_WF_Bus_02_25",
+      "bank": "Wells Fargo",
+      "pages": 12
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6192572307567651068_022825_WellsFargo.pdf",
+      "stem": "jf_6192572307567651068_022825_WellsFargo",
+      "bank": "Wells Fargo",
+      "pages": 12
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6133053349515760959__113024_WellsFargo6891.pdf",
+      "stem": "jf_6133053349515760959__113024_WellsFargo6891",
+      "bank": "Wells Fargo",
+      "pages": 7
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6212495212657013025_eStmt_2025-02-28.pdf",
+      "stem": "jf_6212495212657013025_eStmt_2025-02-28",
+      "bank": "Bank of America",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6128616110545384174_eStmt_2024-12-31.pdf",
+      "stem": "jf_6128616110545384174_eStmt_2024-12-31",
+      "bank": "Bank of America",
+      "pages": 10
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6103788456564678079_Aug_business.pdf",
+      "stem": "jf_6103788456564678079_Aug_business",
+      "bank": "Bank of America",
+      "pages": 14
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6099093828131802006_eStmt_2024-08-30.pdf",
+      "stem": "jf_6099093828131802006_eStmt_2024-08-30",
+      "bank": "Bank of America",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6254720553501890081_April_cp.pdf",
+      "stem": "jf_6254720553501890081_April_cp",
+      "bank": "Bank of America",
+      "pages": 10
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6092442155081128496_September_statement_.pdf",
+      "stem": "jf_6092442155081128496_September_statement_",
+      "bank": "Bank of America",
+      "pages": 6
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6270449508311356307_eStmt_2025-05-30.pdf",
+      "stem": "jf_6270449508311356307_eStmt_2025-05-30",
+      "bank": "Bank of America",
+      "pages": 12
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6118981137912687192_eStmt_2024-09-30.pdf",
+      "stem": "jf_6118981137912687192_eStmt_2024-09-30",
+      "bank": "Bank of America",
+      "pages": 14
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/August 2024.pdf",
+      "stem": "August 2024",
+      "bank": "Chase",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/June 2024 11.pdf",
+      "stem": "June 2024 11",
+      "bank": "Chase",
+      "pages": 14
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6129555294519705557_Chase_Bank_Statement__3503__Dec__2024__E_Eric_Guirard_and_Associates__LLC.pdf",
+      "stem": "jf_6129555294519705557_Chase_Bank_Statement__3503__Dec__2024__E_Eric_Guirard_and_Associates__LLC",
+      "bank": "Chase",
+      "pages": 12
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/20240531-statements-8535- (1) (1).pdf",
+      "stem": "20240531-statements-8535- (1) (1)",
+      "bank": "Chase",
+      "pages": 2
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6122574794017513511_20241129-statements-7851-.pdf",
+      "stem": "jf_6122574794017513511_20241129-statements-7851-",
+      "bank": "Chase",
+      "pages": 6
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6140714782534395844_Jacks_bank_statement_3.pdf",
+      "stem": "jf_6140714782534395844_Jacks_bank_statement_3",
+      "bank": "Chase",
+      "pages": 2
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_5957456902351109714_Bank_May__2024.pdf",
+      "stem": "jf_5957456902351109714_Bank_May__2024",
+      "bank": "Truist",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6243675972838661454_April__2025.pdf",
+      "stem": "jf_6243675972838661454_April__2025",
+      "bank": "Truist",
+      "pages": 5
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6243675972838661454_May__2025.pdf",
+      "stem": "jf_6243675972838661454_May__2025",
+      "bank": "Truist",
+      "pages": 6
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/June2nd statement.pdf",
+      "stem": "June2nd statement",
+      "bank": "Truist",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/June 2 Bank Statements.pdf",
+      "stem": "June 2 Bank Statements",
+      "bank": "Truist",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6368736913616947782_october_2025_monthly_statement.pdf",
+      "stem": "jf_6368736913616947782_october_2025_monthly_statement",
+      "bank": "Navy Federal",
+      "pages": 7
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6209987725364871971_Jan_2025_Navy_Federal_Credit_Union_Statement.pdf",
+      "stem": "jf_6209987725364871971_Jan_2025_Navy_Federal_Credit_Union_Statement",
+      "bank": "Navy Federal",
+      "pages": 6
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6101847896013879547_3856_11_1_x_11_30_24_x_NOV_RW_INC.pdf",
+      "stem": "jf_6101847896013879547_3856_11_1_x_11_30_24_x_NOV_RW_INC",
+      "bank": "Navy Federal",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6162327375381759265_December_24.pdf",
+      "stem": "jf_6162327375381759265_December_24",
+      "bank": "Navy Federal",
+      "pages": 9
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6373987095679036427_october_2025_monthly_statement.pdf",
+      "stem": "jf_6373987095679036427_october_2025_monthly_statement",
+      "bank": "Navy Federal",
+      "pages": 5
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6343682147613944620_AUG25.pdf",
+      "stem": "jf_6343682147613944620_AUG25",
+      "bank": "PNC",
+      "pages": 12
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/Statement-2024-06-28.pdf",
+      "stem": "Statement-2024-06-28",
+      "bank": "PNC",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6144157308015573191_Statement-2024-12-31.pdf",
+      "stem": "jf_6144157308015573191_Statement-2024-12-31",
+      "bank": "PNC",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6168433235956073946_StatementPDFServlet__1__feb.pdf",
+      "stem": "jf_6168433235956073946_StatementPDFServlet__1__feb",
+      "bank": "PNC",
+      "pages": 14
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6102713165646141551_Statement-2024-09-30.pdf",
+      "stem": "jf_6102713165646141551_Statement-2024-09-30",
+      "bank": "PNC",
+      "pages": 5
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6151919195126683348_td_oct_2024__1_.pdf",
+      "stem": "jf_6151919195126683348_td_oct_2024__1_",
+      "bank": "TD Bank",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6305830120618392568_View_PDF_Statement_2025-04-30-2.pdf",
+      "stem": "jf_6305830120618392568_View_PDF_Statement_2025-04-30-2",
+      "bank": "TD Bank",
+      "pages": 12
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6119243872618413145_24-09-30_8727_Operating_Account.pdf",
+      "stem": "jf_6119243872618413145_24-09-30_8727_Operating_Account",
+      "bank": "TD Bank",
+      "pages": 10
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6119243872618413145_24-10-31_8751_Bank_Statement.pdf",
+      "stem": "jf_6119243872618413145_24-10-31_8751_Bank_Statement",
+      "bank": "TD Bank",
+      "pages": 10
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6233203745029423186_ColCUJan_31__2025.pdf",
+      "stem": "jf_6233203745029423186_ColCUJan_31__2025",
+      "bank": "Capital One",
+      "pages": 2
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6193358517021314484_estatement__40_.pdf",
+      "stem": "jf_6193358517021314484_estatement__40_",
+      "bank": "Capital One",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6206203612914700398_April2..pdf",
+      "stem": "jf_6206203612914700398_April2.",
+      "bank": "Capital One",
+      "pages": 7
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6199516396739372403_Boards_biz_stmt_1_2025.pdf",
+      "stem": "jf_6199516396739372403_Boards_biz_stmt_1_2025",
+      "bank": "Capital One",
+      "pages": 6
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/March 2025 x0273.pdf",
+      "stem": "March 2025 x0273",
+      "bank": "Regions",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6413808402318685490_Regions__August_Statements_.pdf",
+      "stem": "jf_6413808402318685490_Regions__August_Statements_",
+      "bank": "Regions",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6195994065127249127_December_2024_x4202.pdf",
+      "stem": "jf_6195994065127249127_December_2024_x4202",
+      "bank": "Regions",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6413808402318685490_Regions__Sept._Statements__3852.pdf",
+      "stem": "jf_6413808402318685490_Regions__Sept._Statements__3852",
+      "bank": "Regions",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6183055135125093128_07-2024.pdf",
+      "stem": "jf_6183055135125093128_07-2024",
+      "bank": "Credit Union",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/DEBTSCHWKA.pdf",
+      "stem": "DEBTSCHWKA",
+      "bank": "Credit Union",
+      "pages": 1
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6285072995164643338_May_312C_2025.pdf",
+      "stem": "jf_6285072995164643338_May_312C_2025",
+      "bank": "Credit Union",
+      "pages": 12
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6127906401199326829_Statements_20241201_Nov.pdf",
+      "stem": "jf_6127906401199326829_Statements_20241201_Nov",
+      "bank": "Credit Union",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6259797348813150855_May_2025.pdf",
+      "stem": "jf_6259797348813150855_May_2025",
+      "bank": "US Bank",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6134693118496923496_NOV_24.pdf",
+      "stem": "jf_6134693118496923496_NOV_24",
+      "bank": "US Bank",
+      "pages": 16
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6461407240319572792_Us_Bank_Blue_Plate_12.30.2025__1_.pdf",
+      "stem": "jf_6461407240319572792_Us_Bank_Blue_Plate_12.30.2025__1_",
+      "bank": "US Bank",
+      "pages": 20
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6250455640489176750_Amegy_Stmt_Apr_2025__8155_.pdf",
+      "stem": "jf_6250455640489176750_Amegy_Stmt_Apr_2025__8155_",
+      "bank": "Zions / NBAZ",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/March 31st Statement.pdf",
+      "stem": "March 31st Statement",
+      "bank": "Zions / NBAZ",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6025740545124087726_Aug_24.pdf",
+      "stem": "jf_6025740545124087726_Aug_24",
+      "bank": "Zions / NBAZ",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6117537532331821624_OPERATING_ACCOUNT-STATEMENT-10-31-2024-b62a74e6-53a2-42a0-b72f-df88023cfe6d.pdf",
+      "stem": "jf_6117537532331821624_OPERATING_ACCOUNT-STATEMENT-10-31-2024-b62a74e6-53a2-42a0-b72f-df88023cfe6d",
+      "bank": "Community Bank",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6152102826324735716_BBTOCT2024.pdf",
+      "stem": "jf_6152102826324735716_BBTOCT2024",
+      "bank": "Community Bank",
+      "pages": 10
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6229671092909259221_download_may_12_mtd.pdf",
+      "stem": "jf_6229671092909259221_download_may_12_mtd",
+      "bank": "Community Bank",
+      "pages": 2
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6146762407029612096_Huntington_Statement__December_2024_.pdf",
+      "stem": "jf_6146762407029612096_Huntington_Statement__December_2024_",
+      "bank": "Huntington",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6224437311362967240_march2025.pdf",
+      "stem": "jf_6224437311362967240_march2025",
+      "bank": "Huntington",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/STATEMENTS,July2024-7730.pdf",
+      "stem": "STATEMENTS,July2024-7730",
+      "bank": "Citizens",
+      "pages": 4
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6183219932238220216_STATEMENTS_November2024-7920__4_.pdf",
+      "stem": "jf_6183219932238220216_STATEMENTS_November2024-7920__4_",
+      "bank": "Citizens",
+      "pages": 12
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6146149857224066765_Nov_302C_2024.pdf",
+      "stem": "jf_6146149857224066765_Nov_302C_2024",
+      "bank": "USAA",
+      "pages": 11
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6205375835389028686_Jan_2025.pdf",
+      "stem": "jf_6205375835389028686_Jan_2025",
+      "bank": "USAA",
+      "pages": 11
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6363624618798115542_20250831-statements-0812.pdf",
+      "stem": "jf_6363624618798115542_20250831-statements-0812",
+      "bank": "BMO / Harris",
+      "pages": 31
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6363624618798115542_20250630-statements-0812.pdf",
+      "stem": "jf_6363624618798115542_20250630-statements-0812",
+      "bank": "BMO / Harris",
+      "pages": 24
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/BANK DEC 2024.pdf",
+      "stem": "BANK DEC 2024",
+      "bank": "KeyBank",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/BANK NOV 2024.pdf",
+      "stem": "BANK NOV 2024",
+      "bank": "KeyBank",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6072386398711948491_downloadfile_9_.PDF",
+      "stem": "jf_6072386398711948491_downloadfile_9_",
+      "bank": "First Horizon",
+      "pages": 5
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6210581134367210167_Printing_285_29.PDF",
+      "stem": "jf_6210581134367210167_Printing_285_29",
+      "bank": "First Horizon",
+      "pages": 3
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6199314505128187907_e-Statements_February_2025.pdf",
+      "stem": "jf_6199314505128187907_e-Statements_February_2025",
+      "bank": "Fifth Third",
+      "pages": 13
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6183793026234100902_shopify_balance_statement_2024-11-01_2024-11-30.pdf",
+      "stem": "jf_6183793026234100902_shopify_balance_statement_2024-11-01_2024-11-30",
+      "bank": "Fifth Third",
+      "pages": 6
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6037053375128185146_June_24.pdf",
+      "stem": "jf_6037053375128185146_June_24",
+      "bank": "Citibank",
+      "pages": 6
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/jf_6200368671966650859_Jan_31_2025.pdf",
+      "stem": "jf_6200368671966650859_Jan_31_2025",
+      "bank": "Citibank",
+      "pages": 8
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/JD June.pdf",
+      "stem": "JD June",
+      "bank": "Comerica",
+      "pages": 10
+    },
+    {
+      "path": "/Users/maheedharraogovada/Desktop/ml-statement-parser/data/pdfs/JD May.pdf",
+      "stem": "JD May",
+      "bank": "Comerica",
+      "pages": 11
+    }
+  ]
+}

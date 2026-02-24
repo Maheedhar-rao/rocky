@@ -377,7 +377,7 @@ def process_page(pdf_stem: str, page_idx: int) -> dict:
         "word_count": len(words),
         "tag_counts": {},
         "alignment_rate": round(aligned_count / len(transactions) * 100, 1) if transactions else 100.0,
-        "label_source": "claude",
+        "label_source": label_data.get("label_source", "claude"),
     }
 
     # Tag distribution
