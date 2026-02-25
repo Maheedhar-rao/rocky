@@ -356,7 +356,7 @@ def _log_feedback(deal_id: str, method: str, result: dict, shadow_result: dict =
 # --- Endpoints ---
 
 @app.post("/v1/parse", response_model=ParseResponse)
-async def parse_statement(req: ParseRequest):
+def parse_statement(req: ParseRequest):
     """Parse a bank statement PDF."""
     start = time.time()
 
