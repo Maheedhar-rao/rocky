@@ -1,14 +1,27 @@
-FROM python:3.11-slim
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+
+# Prevent interactive prompts during apt-get
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# System deps: poppler for pdf2image, tesseract for OCR fallback
+# System deps: Python 3.11, poppler for pdf2image, tesseract for OCR fallback
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl poppler-utils tesseract-ocr tesseract-ocr-eng \
+    software-properties-common curl build-essential \
+    poppler-utils tesseract-ocr tesseract-ocr-eng \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3.11-dev python3-pip \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
     && rm -rf /var/lib/apt/lists/*
 
-# CPU-only PyTorch (~700MB instead of ~2.2GB with CUDA)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Upgrade pip
+RUN python -m pip install --no-cache-dir --upgrade pip
+
+# Install PyTorch with CUDA 12.1 support
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu121
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -23,13 +36,14 @@ RUN mkdir -p /app/models/statement_parser /app/models/credit_debit \
     && tar xzf /tmp/models.tar.gz -C /app \
     && rm /tmp/models.tar.gz
 
-# Data directory (persisted via volume mount)
+# Data directory
 RUN mkdir -p /app/data
 
 COPY start.sh .
 RUN chmod +x start.sh
 
-ENV PORT=8080 PYTHONUNBUFFERED=1
-EXPOSE 8080
+# HuggingFace Spaces uses port 7860
+ENV PORT=7860 PYTHONUNBUFFERED=1
+EXPOSE 7860
 
 CMD ["/app/start.sh"]
