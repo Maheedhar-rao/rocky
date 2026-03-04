@@ -112,13 +112,67 @@ _start_time = time.time()
 
 # --- Claude Vision fallback ---
 
-CLAUDE_VISION_PROMPT = """Extract ALL transactions from this bank statement page. Return JSON:
-{
-  "transactions": [
-    {"date": "01/15", "description": "DIRECT DEPOSIT", "amount": 2500.00, "type": "credit", "balance_after": 5000.00}
-  ]
-}
-Only return valid JSON. amount is positive for credits, negative for debits."""
+CLAUDE_VISION_PROMPT = """Extract ALL transactions from this bank statement page.
+
+TRANSACTION TYPES TO CAPTURE — include every one:
+- ACH credits and debits (payroll, vendor payments, MCA payments)
+- POS purchases and POS debit card transactions
+- ATM withdrawals and deposits
+- Wire transfers (incoming and outgoing)
+- Internal transfers (Transfer To Shares, Transfer From Shares, Transfer To Checking, Transfer From Checking)
+- Returned item fees, NSF fees, overdraft fees
+- Service charges and monthly fees
+- Tax payments, loan payments, dividend credits
+
+AMOUNT RULES — critical:
+- Withdrawals, debits, fees, payments → NEGATIVE number (e.g. -253.34)
+- Deposits, credits → POSITIVE number (e.g. 1250.00)
+- Read amount from the Withdrawal column (negative) or Deposit column (positive)
+- Do NOT read amounts from the Balance column
+- For MCA/ACH debits (Arya Capital, CCS, Trueadvance, Mission Fin, Palmera Payments): amount is the full debit value, typically $100–$2000
+- For NSF/Returned Item fees: capture full fee as negative (e.g. -29.00)
+- For tax and loan payments: capture full payment amount as negative
+- Never output $0.00 as an amount unless the transaction genuinely has zero value
+
+BALANCE RULES:
+- running_balance is the account balance printed in the Balance column on that exact row
+- Use the number exactly as printed — do not calculate or infer it
+- If no balance is printed on a row, use null
+
+DUPLICATE PREVENTION — critical:
+- Extract only from the main transaction history table
+- Do NOT extract from: account summary, daily balance summary, recent activity recap, fee summary, year-to-date totals
+- If the same date + description + amount appears more than once on this page, include it only once
+- Skip repeated rows from the previous month shown at the top of this page
+
+DATE FORMAT:
+- Always output full YYYY-MM-DD format
+- If the statement shows MM/DD, infer the year from context (statement period shown in header)
+
+Return a JSON array only. No explanation, no markdown, no preamble:
+[
+  {
+    "date": "2025-12-03",
+    "description": "ACH Paid From Optix LLC Payroll",
+    "amount": 1250.00,
+    "type": "credit",
+    "running_balance": 3842.17
+  },
+  {
+    "date": "2025-12-04",
+    "description": "POS Debit Arya Capital 8887733199",
+    "amount": -253.34,
+    "type": "debit",
+    "running_balance": 3588.83
+  },
+  {
+    "date": "2025-12-05",
+    "description": "Returned Item Fee",
+    "amount": -29.00,
+    "type": "debit",
+    "running_balance": 3559.83
+  }
+]"""
 
 
 def _try_salvage_truncated_json(text: str) -> Optional[dict]:
@@ -184,7 +238,11 @@ def _parse_with_claude_vision(pdf_bytes: bytes) -> dict:
         page_txns = []
         try:
             page_data = json.loads(text)
-            for t in page_data.get("transactions", []):
+            if isinstance(page_data, list):
+                txn_list = page_data
+            else:
+                txn_list = page_data.get("transactions", [])
+            for t in txn_list:
                 t["page"] = page_idx
                 t["confidence"] = 1.0
                 page_txns.append(t)

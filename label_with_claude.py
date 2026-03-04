@@ -31,44 +31,71 @@ LABELS_DIR = PROJECT_DIR / "data" / "labels"
 
 CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
 
-EXTRACTION_PROMPT = """You are analyzing a bank statement page. Extract ALL transactions visible on this page.
+LABEL_PROMPT = """You are generating training labels for a bank statement parser.
 
-For each transaction, return:
-- date: the transaction date as shown (e.g., "01/15", "Jan 15", "2024-01-15")
-- description: the full transaction description text
-- amount: the dollar amount as a number (positive for deposits/credits, negative for withdrawals/debits)
-- type: "credit" or "debit"
-- balance_after: the running balance after this transaction (if shown), or null
+Your job is to identify and extract every transaction from this bank statement page image so it can be used as ground truth training data for a LayoutLMv3 model.
 
-Also extract page metadata:
-- bank_name: the bank name if visible
-- account_number_last4: last 4 digits of account if visible
-- statement_period: the statement date range if visible
-- page_number: the page number if visible
+EXTRACT EVERY TRANSACTION — include all of these:
+- ACH credits and debits
+- POS purchases and debit card transactions
+- ATM withdrawals
+- Wire transfers (in and out)
+- Internal transfers between accounts
+- NSF fees, returned item fees, overdraft fees
+- Service charges, monthly fees
+- Tax payments, loan payments
+- Dividend credits
 
-Return ONLY valid JSON in this exact format:
+AMOUNT RULES — these must be exact:
+- Debits, withdrawals, fees, payments → NEGATIVE (e.g. -253.34)
+- Credits, deposits → POSITIVE (e.g. 1250.00)
+- Read from the Withdrawal or Deposit column only
+- Never read from the Balance column for the amount
+- MCA lender payments (Arya Capital, CCS, Trueadvance, Mission Fin, Palmera) are always negative and typically $100–$2000
+- NSF fees are typically -29.00
+
+BALANCE:
+- running_balance is the exact number in the Balance column on that row
+- null if no balance printed on that row
+
+WHAT NOT TO EXTRACT:
+- Daily balance summary rows
+- Account summary / opening / closing balance rows
+- Section headers or totals rows
+- Any row that is not an individual transaction
+
+DATE FORMAT: YYYY-MM-DD always. Infer year from statement header context.
+
+Return only a JSON object in this exact format, no explanation:
 {
-  "metadata": {
-    "bank_name": "...",
-    "account_number_last4": "...",
-    "statement_period": "...",
-    "page_number": null
-  },
+  "has_transactions": true,
+  "statement_year": 2025,
+  "statement_month": 12,
   "transactions": [
     {
-      "date": "01/15",
-      "description": "DIRECT DEPOSIT EMPLOYER NAME",
-      "amount": 2500.00,
+      "date": "2025-12-03",
+      "description": "ACH Paid From Optix LLC Payroll",
+      "amount": 1250.00,
       "type": "credit",
-      "balance_after": 5000.00
+      "running_balance": 3842.17
+    },
+    {
+      "date": "2025-12-04",
+      "description": "POS Debit Arya Capital 8887733199",
+      "amount": -253.34,
+      "type": "debit",
+      "running_balance": 3588.83
     }
   ],
-  "has_transactions": true,
-  "notes": "any issues or ambiguities"
+  "notes": "any observations about this page layout or edge cases"
 }
 
-If this page has no transactions (e.g., summary page, cover page), set has_transactions=false and transactions=[].
-Be thorough — extract EVERY transaction row, including small fees and interest."""
+If this page has no transactions (e.g. it is a cover page or summary page), return:
+{
+  "has_transactions": false,
+  "transactions": [],
+  "notes": "reason this page has no transactions"
+}"""
 
 # Singleton Anthropic client
 _client = None
@@ -104,7 +131,7 @@ def label_page(image_path: Path) -> dict:
                 },
                 {
                     "type": "text",
-                    "text": EXTRACTION_PROMPT,
+                    "text": LABEL_PROMPT,
                 },
             ],
         }],
