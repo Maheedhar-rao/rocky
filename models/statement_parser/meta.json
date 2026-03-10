@@ -1,6 +1,6 @@
 {
-  "version": "v1771962700",
-  "trained_at": "2026-02-24T19:51:40.294277+00:00",
+  "version": "v1773095009",
+  "trained_at": "2026-03-09T22:23:29.182297+00:00",
   "base_model": "microsoft/layoutlmv3-base",
   "num_labels": 9,
   "bio_tags": [
@@ -27,35 +27,62 @@
   },
   "epochs": 10,
   "batch_size": 4,
+  "grad_accum": 4,
+  "effective_batch_size": 16,
   "learning_rate": 5e-05,
-  "train_samples": 429,
-  "test_samples": 90,
-  "train_pdfs": 73,
-  "test_pdfs": 13,
+  "train_samples": 475,
+  "test_samples": 33,
+  "train_pdfs": 80,
+  "test_pdfs": 6,
   "min_alignment": 80.0,
   "claude_only": true,
   "evaluation": {
-    "best_f1": 0.9245,
-    "per_tag": {}
+    "best_f1": 0.9608,
+    "per_tag": {
+      "DATE": {
+        "precision": 0.9228,
+        "recall": 1.0,
+        "f1": 0.9599,
+        "support": 287
+      },
+      "DESC": {
+        "precision": 0.8923,
+        "recall": 1.0,
+        "f1": 0.9431,
+        "support": 265
+      },
+      "AMOUNT": {
+        "precision": 0.9524,
+        "recall": 1.0,
+        "f1": 0.9756,
+        "support": 280
+      },
+      "BALANCE": {
+        "precision": 0.9434,
+        "recall": 1.0,
+        "f1": 0.9709,
+        "support": 100
+      }
+    }
   },
   "class_weights": {
     "O": 0.18,
-    "B-DATE": 2.25,
+    "B-DATE": 2.18,
     "I-DATE": 10.0,
-    "B-DESC": 2.74,
-    "I-DESC": 0.48,
-    "B-AMOUNT": 2.26,
+    "B-DESC": 2.66,
+    "I-DESC": 0.47,
+    "B-AMOUNT": 2.19,
     "I-AMOUNT": 1.0,
     "B-BALANCE": 10.0,
     "I-BALANCE": 1.0
   },
   "tag_distribution": {
-    "O": 111523,
-    "B-DATE": 8868,
-    "B-DESC": 7272,
-    "I-DESC": 41848,
-    "B-AMOUNT": 8817,
-    "I-DATE": 58,
-    "B-BALANCE": 1175
+    "O": 105422,
+    "B-DATE": 8856,
+    "B-DESC": 7251,
+    "I-DESC": 41363,
+    "B-AMOUNT": 8810,
+    "B-BALANCE": 1324,
+    "I-DATE": 723
   }
 }

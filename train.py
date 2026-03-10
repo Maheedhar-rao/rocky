@@ -187,6 +187,7 @@ def train(
     only_reviewed: bool = False,
     claude_only: bool = False,
     resume: bool = False,
+    grad_accum: int = 1,
 ):
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -224,10 +225,78 @@ def train(
 
     # Train/test split — group by PDF to prevent data leakage
     # (pages from the same statement must stay in the same split)
+    # Stratify by detected bank to ensure each bank format is in both splits
     pdf_stems = sorted(set(s["pdf_stem"] for s in samples))
-    train_stems, test_stems = train_test_split(
-        pdf_stems, test_size=test_split, random_state=42
-    )
+
+    # Detect bank for each PDF from first page words
+    _BANK_PATTERNS = {
+        "chase": "Chase", "jpmorgan": "Chase",
+        "wells fargo": "Wells Fargo", "wellsfargo": "Wells Fargo",
+        "bank of america": "Bank of America",
+        "citibank": "Citibank", "us bank": "US Bank",
+        "pnc": "PNC", "td bank": "TD Bank",
+        "capital one": "Capital One", "truist": "Truist",
+        "huntington": "Huntington", "navy federal": "Navy Federal",
+        "usaa": "USAA", "fifth third": "Fifth Third",
+        "comerica": "Comerica",
+    }
+
+    def _detect_bank_for_stem(stem):
+        # Use first page's words to detect bank
+        for s in samples:
+            if s["pdf_stem"] == stem:
+                text = " ".join(s["words"][:100]).lower()
+                for pattern, bank in _BANK_PATTERNS.items():
+                    if pattern in text:
+                        return bank
+                return "other"
+        return "other"
+
+    pdf_banks = [_detect_bank_for_stem(stem) for stem in pdf_stems]
+    bank_dist = Counter(pdf_banks)
+    print(f"Bank distribution: {dict(bank_dist)}")
+
+    # Stratified split: ensure every bank has at least 1 PDF in training
+    # Banks with ≤2 PDFs: force one into training, rest can go to test
+    forced_train = set()
+    for bank, count in bank_dist.items():
+        if count <= 2:
+            # Force the first PDF of this bank into training
+            for stem, b in zip(pdf_stems, pdf_banks):
+                if b == bank:
+                    forced_train.add(stem)
+                    break
+
+    remaining_stems = [s for s in pdf_stems if s not in forced_train]
+    remaining_banks = [b for s, b in zip(pdf_stems, pdf_banks) if s not in forced_train]
+
+    # Adjust test size for remaining stems
+    n_test = max(1, int(len(pdf_stems) * test_split) - len([s for s in forced_train]))
+    actual_test_size = min(n_test / len(remaining_stems), 0.5) if remaining_stems else 0
+
+    stratify_labels = []
+    for bank in remaining_banks:
+        if bank_dist[bank] < 3:
+            stratify_labels.append("_rare")
+        else:
+            stratify_labels.append(bank)
+
+    try:
+        rem_train, test_stems = train_test_split(
+            remaining_stems, test_size=actual_test_size, random_state=42,
+            stratify=stratify_labels if len(set(stratify_labels)) > 1 else None,
+        )
+    except ValueError:
+        print("  Warning: stratified split failed, using random split")
+        rem_train, test_stems = train_test_split(
+            remaining_stems, test_size=actual_test_size, random_state=42,
+        )
+
+    train_stems = list(forced_train) + rem_train
+    if forced_train:
+        print(f"  Forced {len(forced_train)} rare-bank PDFs into training: "
+              f"{[s[:30] for s in forced_train]}")
+
     test_stem_set = set(test_stems)
     train_samples = [s for s in samples if s["pdf_stem"] not in test_stem_set]
     test_samples = [s for s in samples if s["pdf_stem"] in test_stem_set]
@@ -273,21 +342,28 @@ def train(
 
     # Optimizer + scheduler
     optimizer = AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
-    total_steps = len(train_loader) * epochs
+    # Effective steps accounts for gradient accumulation
+    total_steps = (len(train_loader) // grad_accum) * epochs
     warmup_steps = int(total_steps * 0.1)
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps
     )
 
+    effective_batch = batch_size * grad_accum
+
     # Training loop
     best_f1 = 0.0
     best_report = None
-    print(f"\nTraining for {epochs} epochs ({total_steps} steps, {warmup_steps} warmup)...\n")
+    print(f"\nTraining for {epochs} epochs ({total_steps} steps, {warmup_steps} warmup)")
+    if grad_accum > 1:
+        print(f"  Gradient accumulation: {grad_accum} (effective batch size: {effective_batch})")
+    print()
 
     for epoch in range(epochs):
         model.train()
         epoch_loss = 0.0
         epoch_steps = 0
+        optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(train_loader):
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -299,14 +375,21 @@ def train(
             loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights, ignore_index=-100)
             loss = loss_fn(logits.view(-1, NUM_LABELS), labels.view(-1))
 
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
+            # Scale loss for gradient accumulation
+            if grad_accum > 1:
+                loss = loss / grad_accum
 
-            epoch_loss += loss.item()
+            loss.backward()
+
+            epoch_loss += loss.item() * (grad_accum if grad_accum > 1 else 1)
             epoch_steps += 1
+
+            # Step optimizer every grad_accum batches (or at end of epoch)
+            if (batch_idx + 1) % grad_accum == 0 or (batch_idx + 1) == len(train_loader):
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
 
             if (batch_idx + 1) % 20 == 0:
                 avg_loss = epoch_loss / epoch_steps
@@ -360,15 +443,16 @@ def train(
             print(report_str)
 
     # Save metadata with per-tag evaluation
+    # seqeval returns entity-level keys (DATE, DESC, AMOUNT, BALANCE), not BIO-prefixed
     per_tag_metrics = {}
     if best_report:
-        for tag in BIO_TAGS:
-            if tag != "O" and tag in best_report:
-                per_tag_metrics[tag] = {
-                    "precision": round(best_report[tag]["precision"], 4),
-                    "recall": round(best_report[tag]["recall"], 4),
-                    "f1": round(best_report[tag]["f1-score"], 4),
-                    "support": best_report[tag]["support"],
+        for entity in ("DATE", "DESC", "AMOUNT", "BALANCE"):
+            if entity in best_report:
+                per_tag_metrics[entity] = {
+                    "precision": round(best_report[entity]["precision"], 4),
+                    "recall": round(best_report[entity]["recall"], 4),
+                    "f1": round(best_report[entity]["f1-score"], 4),
+                    "support": int(best_report[entity]["support"]),
                 }
 
     meta = {
@@ -380,6 +464,8 @@ def train(
         "tag2id": TAG2ID,
         "epochs": epochs,
         "batch_size": batch_size,
+        "grad_accum": grad_accum,
+        "effective_batch_size": effective_batch,
         "learning_rate": learning_rate,
         "train_samples": len(train_samples),
         "test_samples": len(test_samples),
@@ -392,10 +478,10 @@ def train(
             "per_tag": per_tag_metrics,
         },
         "class_weights": {BIO_TAGS[i]: round(class_weights[i].item(), 2) for i in range(NUM_LABELS)},
-        "tag_distribution": dict(tag_dist),
+        "tag_distribution": {k: int(v) for k, v in tag_dist.items()},
     }
     with open(MODEL_DIR / "meta.json", "w") as f:
-        json.dump(meta, f, indent=2)
+        json.dump(meta, f, indent=2, default=lambda o: int(o) if hasattr(o, 'item') else o)
 
     print(f"\nTraining complete. Best F1: {best_f1:.4f}")
     print(f"Model saved to {MODEL_DIR}")
@@ -415,6 +501,8 @@ if __name__ == "__main__":
                         help="Only use Claude Vision labeled pages (skip rule-based)")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from last checkpoint")
+    parser.add_argument("--grad-accum", type=int, default=4,
+                        help="Gradient accumulation steps (effective batch = batch-size * grad-accum)")
     args = parser.parse_args()
 
     train(
@@ -426,4 +514,5 @@ if __name__ == "__main__":
         only_reviewed=args.only_reviewed,
         claude_only=args.claude_only,
         resume=args.resume,
+        grad_accum=args.grad_accum,
     )

@@ -35,6 +35,7 @@ from transformers import LayoutLMv3ForTokenClassification, LayoutLMv3Processor
 PROJECT_DIR = Path(__file__).resolve().parent
 MODEL_DIR = PROJECT_DIR / "models" / "statement_parser"
 FEEDBACK_DIR = PROJECT_DIR / "data" / "feedback"
+QUEUE_DIR = PROJECT_DIR / "data" / "queue"  # PDFs queued for Claude labeling
 
 MAX_SEQ_LEN = 512
 MIN_WORDS_THRESHOLD = 20
@@ -110,8 +111,11 @@ def _extract_words_ocr(image: Image.Image) -> list:
 def _parse_amount(text: str) -> float:
     if not text:
         return 0.0
-    cleaned = re.sub(r"[,$()\\s]", "", text)
+    cleaned = re.sub(r"[,$()\s]", "", text)
     cleaned = cleaned.replace("−", "-").replace("–", "-")
+    # Handle trailing minus sign (e.g., "12.00-" → "-12.00")
+    if cleaned.endswith("-"):
+        cleaned = "-" + cleaned[:-1]
     try:
         return float(cleaned)
     except ValueError:
@@ -230,6 +234,131 @@ def _detect_bank_format(page_words: dict) -> str:
         if pattern in text:
             return bank
     return "unknown"
+
+
+def _get_trained_banks() -> set:
+    """Return the set of bank formats seen in existing training labels."""
+    labels_dir = PROJECT_DIR / "data" / "labels"
+    if not labels_dir.exists():
+        return set()
+
+    trained_banks = set()
+    for stem_dir in labels_dir.iterdir():
+        if not stem_dir.is_dir():
+            continue
+        # Check first page's words to detect bank
+        words_path = PROJECT_DIR / "data" / "pages" / stem_dir.name / "page_0_words.json"
+        if words_path.exists():
+            try:
+                with open(words_path) as f:
+                    word_data = json.load(f)
+                words = word_data.get("words", [])
+                text = " ".join(w["text"].lower() for w in words[:100])
+                for pattern, bank in _BANK_PATTERNS.items():
+                    if pattern in text:
+                        trained_banks.add(bank)
+                        break
+            except Exception:
+                pass
+    return trained_banks
+
+
+# Cache trained banks (refreshed on parser reload)
+_trained_banks_cache = None
+
+
+def _is_unseen_bank(bank_format: str) -> bool:
+    """Check if this bank format has NOT been seen in training data."""
+    global _trained_banks_cache
+    if _trained_banks_cache is None:
+        _trained_banks_cache = _get_trained_banks()
+    return bank_format not in _trained_banks_cache and bank_format != "unknown"
+
+
+def _queue_for_claude_labeling(pdf_bytes: bytes, pdf_hash: str, bank_format: str,
+                                page_words: dict, page_count: int, reason: str):
+    """Queue a PDF for Claude Vision labeling.
+
+    Saves page images + pdfplumber words so label_with_claude.py can process them.
+    Called when:
+      - An unseen bank format is detected
+      - Average confidence is critically low (<0.50)
+    """
+    stem = f"queue_{pdf_hash}"
+    queue_pages_dir = PROJECT_DIR / "data" / "pages" / stem
+    queue_meta_path = QUEUE_DIR / f"{pdf_hash}.json"
+
+    # Skip if already queued or already labeled
+    if queue_meta_path.exists():
+        return
+    labels_dir = PROJECT_DIR / "data" / "labels" / stem
+    if labels_dir.exists():
+        return
+
+    QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    queue_pages_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save page images + words
+    try:
+        images = convert_from_bytes(pdf_bytes, dpi=200)
+    except Exception:
+        return
+
+    try:
+        pdf = pdfplumber.open(io.BytesIO(pdf_bytes))
+    except Exception:
+        pdf = None
+
+    pages_saved = 0
+    for page_idx, img in enumerate(images):
+        # Save page image
+        img_path = queue_pages_dir / f"page_{page_idx}.png"
+        img.save(str(img_path))
+
+        # Save pdfplumber words
+        if pdf and page_idx < len(pdf.pages):
+            page = pdf.pages[page_idx]
+            words = page.extract_words(x_tolerance=3, y_tolerance=3, keep_blank_chars=False)
+            pw, ph = page.width, page.height
+            word_list = []
+            for w in words:
+                text = w["text"].strip()
+                if not text:
+                    continue
+                word_list.append({
+                    "text": text,
+                    "bbox": _normalize_bbox((w["x0"], w["top"], w["x1"], w["bottom"]), pw, ph),
+                    "top": round(w["top"] / ph * 1000, 2),
+                    "bottom": round(w["bottom"] / ph * 1000, 2),
+                })
+            words_path = queue_pages_dir / f"page_{page_idx}_words.json"
+            with open(words_path, "w") as f:
+                json.dump({
+                    "pdf": f"{stem}.pdf",
+                    "page_index": page_idx,
+                    "total_pages": len(images),
+                    "used_ocr": False,
+                    "word_count": len(word_list),
+                    "words": word_list,
+                }, f, indent=2)
+            pages_saved += 1
+
+    if pdf:
+        pdf.close()
+
+    # Save queue metadata
+    meta = {
+        "pdf_hash": pdf_hash,
+        "stem": stem,
+        "bank_format": bank_format,
+        "page_count": page_count,
+        "pages_saved": pages_saved,
+        "reason": reason,
+        "status": "pending",  # pending → labeled → aligned → trained
+        "queued_at": datetime.now().isoformat(),
+    }
+    with open(queue_meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
 
 
 def _log_feedback(pdf_hash: str, transactions: list, low_conf_pages: list,
@@ -906,6 +1035,28 @@ class StatementParserLocal:
         except Exception:
             pass  # feedback logging should never break parsing
 
+        # Queue for Claude labeling if unseen bank or critically low confidence
+        try:
+            avg_conf = statistics.mean(
+                t.confidence for t in all_transactions
+            ) if all_transactions else 1.0
+
+            reason = None
+            if _is_unseen_bank(bank_format):
+                reason = f"unseen_bank:{bank_format}"
+            elif avg_conf < 0.50:
+                reason = f"low_confidence:{avg_conf:.2f}"
+            elif len(low_conf_pages) > len(images) * 0.5:
+                reason = f"many_low_conf_pages:{len(low_conf_pages)}/{len(images)}"
+
+            if reason:
+                _queue_for_claude_labeling(
+                    pdf_bytes, pdf_hash, bank_format,
+                    page_words, len(images), reason,
+                )
+        except Exception:
+            pass  # queuing should never break parsing
+
         # Compute summary metrics
         total_deposits = sum(t.amount for t in all_transactions if t.type == "credit")
         total_withdrawals = sum(t.amount for t in all_transactions if t.type == "debit")
@@ -948,9 +1099,10 @@ def get_parser() -> StatementParserLocal:
 
 
 def reload_parser():
-    global _parser
+    global _parser, _trained_banks_cache
     with _lock:
         _parser = StatementParserLocal()
+        _trained_banks_cache = None  # refresh bank cache on reload
     return _parser
 
 

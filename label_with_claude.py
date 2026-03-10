@@ -117,7 +117,7 @@ def label_page(image_path: Path) -> dict:
 
     response = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{
             "role": "user",
             "content": [
@@ -224,6 +224,10 @@ def main():
     parser.add_argument("--pdf", help="Label specific PDF stem (folder name in data/pages/)")
     parser.add_argument("--force", action="store_true", help="Re-label already labeled pages")
     parser.add_argument("--dry-run", action="store_true", help="Count pages without calling API")
+    parser.add_argument("--queue", action="store_true",
+                        help="Process only PDFs queued by predict.py (unseen banks, low confidence)")
+    parser.add_argument("--relabel-errors", action="store_true",
+                        help="Re-label only pages that had parse_error in previous labeling")
     args = parser.parse_args()
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -232,8 +236,77 @@ def main():
 
     LABELS_DIR.mkdir(parents=True, exist_ok=True)
 
+    QUEUE_DIR = PROJECT_DIR / "data" / "queue"
+
+    if args.relabel_errors:
+        # Find all pages with parse_error and re-label them
+        import glob as _glob
+        error_pages = []
+        for lf in sorted(_glob.glob(str(LABELS_DIR / "**" / "page_*_labels.json"), recursive=True)):
+            with open(lf) as f:
+                d = json.load(f)
+            if d.get("parse_error") or d.get("error"):
+                error_pages.append(Path(lf))
+        if not error_pages:
+            print("No parse-error pages found.")
+            return
+        print(f"Found {len(error_pages)} parse-error pages to re-label")
+        est_cost = len(error_pages) * 0.003
+        print(f"Estimated cost: ${est_cost:.2f}")
+        if args.dry_run:
+            for ep in error_pages:
+                print(f"  {ep.relative_to(LABELS_DIR)}")
+            return
+        total_labeled = 0
+        total_txns = 0
+        total_errors = 0
+        for ep in error_pages:
+            stem = ep.parent.name
+            page_idx = ep.stem.replace("_labels", "").replace("page_", "")
+            img_path = PAGES_DIR / stem / f"page_{page_idx}.png"
+            if not img_path.exists():
+                print(f"  SKIP {stem}/page_{page_idx} — image not found")
+                continue
+            print(f"  Re-labeling {stem}/page_{page_idx}...", end=" ")
+            try:
+                result = label_page(img_path)
+                result["_source_image"] = img_path.name
+                result["_pdf_stem"] = stem
+                with open(ep, "w") as f:
+                    json.dump(result, f, indent=2)
+                txns = len(result.get("transactions", []))
+                total_txns += txns
+                total_labeled += 1
+                if result.get("parse_error"):
+                    total_errors += 1
+                    print(f"STILL ERROR")
+                else:
+                    print(f"{txns} txns")
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"ERROR: {e}")
+                total_errors += 1
+        print(f"\nDone. Re-labeled {total_labeled} pages, {total_txns} transactions found, {total_errors} errors")
+        return
+
     if args.pdf:
         pdf_stems = [args.pdf]
+    elif args.queue:
+        # Process only stems queued by predict.py (unseen banks / low confidence)
+        if not QUEUE_DIR.exists():
+            print("No queued PDFs. Queue is populated when predict.py encounters unseen banks.")
+            return
+        queued_stems = []
+        for qf in sorted(QUEUE_DIR.glob("*.json")):
+            with open(qf) as f:
+                meta = json.load(f)
+            if meta.get("status") == "pending":
+                queued_stems.append(meta["stem"])
+        if not queued_stems:
+            print("No pending queued PDFs.")
+            return
+        pdf_stems = queued_stems
+        print(f"Processing {len(pdf_stems)} queued PDFs (unseen banks / low confidence)")
     else:
         if not PAGES_DIR.exists():
             print(f"No pages directory at {PAGES_DIR}. Run pdf_to_pages.py first.")
@@ -282,6 +355,20 @@ def main():
         total_errors += stats["errors"]
         print(f"  Pages: {stats['pages']}, Labeled: {stats['labeled']}, "
               f"Txns: {stats['transactions']}, Skipped: {stats['skipped']}, Errors: {stats['errors']}")
+
+    # Update queue status for any queued PDFs that were just labeled
+    if args.queue and QUEUE_DIR.exists():
+        for qf in QUEUE_DIR.glob("*.json"):
+            try:
+                with open(qf) as f:
+                    meta = json.load(f)
+                if meta.get("stem") in pdf_stems and meta.get("status") == "pending":
+                    meta["status"] = "labeled"
+                    meta["labeled_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                    with open(qf, "w") as f:
+                        json.dump(meta, f, indent=2)
+            except Exception:
+                pass
 
     print(f"\nDone. Labeled {total_labeled} pages, {total_txns} transactions found, {total_errors} errors")
 

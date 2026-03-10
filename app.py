@@ -381,6 +381,44 @@ def _save_auto_labels(pdf_bytes: bytes, per_page_labels: list, pdf_hash: str):
 
 # --- Feedback logging ---
 
+def _log_bank_encounter(pdf_hash: str, bank_format: str, page_count: int,
+                         txn_count: int, avg_confidence: float, is_new: bool,
+                         deal_id: str = None):
+    """Log bank encounter to bank_encounters table in Supabase.
+
+    Tracks every unique bank format seen, flagging unseen banks for
+    priority Claude labeling. Schema:
+        pdf_hash TEXT PRIMARY KEY,
+        bank_format TEXT,
+        deal_id TEXT,
+        page_count INT,
+        transaction_count INT,
+        avg_confidence FLOAT,
+        is_new_bank BOOLEAN,
+        queued_for_labeling BOOLEAN,
+        created_at TIMESTAMPTZ DEFAULT now()
+    """
+    sb = _get_supabase()
+    if not sb:
+        return
+
+    row = {
+        "pdf_hash": pdf_hash,
+        "bank_format": bank_format,
+        "deal_id": deal_id or "",
+        "page_count": page_count,
+        "transaction_count": txn_count,
+        "avg_confidence": round(avg_confidence, 4),
+        "is_new_bank": is_new,
+        "queued_for_labeling": is_new or avg_confidence < 0.50,
+    }
+
+    try:
+        sb.table("bank_encounters").upsert(row, on_conflict="pdf_hash").execute()
+    except Exception as e:
+        logger.error(f"Failed to log bank encounter: {e}")
+
+
 def _log_feedback(deal_id: str, method: str, result: dict, shadow_result: dict = None, duration_ms: int = 0):
     """Log extraction result to statement_extraction_feedback table."""
     sb = _get_supabase()
@@ -465,6 +503,43 @@ def parse_statement(req: ParseRequest):
             shadow_result=shadow_result,
             duration_ms=duration_ms,
         )
+
+    # Log bank encounter for tracking new/unseen banks
+    try:
+        import hashlib as _hl
+        _pdf_hash = _hl.md5(pdf_bytes[:4096]).hexdigest()[:12]
+        from predict import _detect_bank_format, _is_unseen_bank
+        # Quick bank detection from first page words
+        import pdfplumber as _pdfp
+        _pdf = _pdfp.open(io.BytesIO(pdf_bytes))
+        _first_words = _pdf.pages[0].extract_words(x_tolerance=3, y_tolerance=3)[:100] if _pdf.pages else []
+        _bank = "unknown"
+        _text = " ".join(w["text"].lower() for w in _first_words)
+        from predict import _BANK_PATTERNS
+        for _pat, _bname in _BANK_PATTERNS.items():
+            if _pat in _text:
+                _bank = _bname
+                break
+        _pdf.close()
+
+        _txns = result.get("transactions", [])
+        _avg_conf = sum(t.get("confidence", 0.5) for t in _txns) / len(_txns) if _txns else 0.5
+        _is_new = _is_unseen_bank(_bank)
+
+        _log_bank_encounter(
+            pdf_hash=_pdf_hash,
+            bank_format=_bank,
+            page_count=result.get("page_count", 0),
+            txn_count=len(_txns),
+            avg_confidence=_avg_conf,
+            is_new=_is_new,
+            deal_id=req.deal_id,
+        )
+
+        if _is_new:
+            logger.info(f"New bank encountered: {_bank} (hash={_pdf_hash})")
+    except Exception as e:
+        logger.debug(f"Bank encounter logging skipped: {e}")
 
     # Auto-label: save Claude Vision results as training data for retraining
     per_page = result.pop("_per_page", None)
@@ -1421,6 +1496,77 @@ async def upload_parse(file: UploadFile = File(...)):
     b64 = base64.b64encode(pdf_bytes).decode()
     req = ParseRequest(pdf_base64=b64)
     return await parse_statement(req)
+
+
+@app.get("/v1/banks")
+async def list_banks():
+    """Return all encountered bank formats with stats.
+
+    Sources: Supabase bank_encounters table (production) + local data/queue/ (fallback).
+    Shows which banks are trained vs unseen, and queued for labeling.
+    """
+    banks = {}
+
+    # Try Supabase first
+    sb = _get_supabase()
+    if sb:
+        try:
+            resp = sb.table("bank_encounters") \
+                .select("bank_format, is_new_bank, queued_for_labeling, avg_confidence, transaction_count, page_count") \
+                .execute()
+            for row in resp.data:
+                bank = row["bank_format"]
+                if bank not in banks:
+                    banks[bank] = {
+                        "encounters": 0, "total_txns": 0, "total_pages": 0,
+                        "is_trained": not row.get("is_new_bank", True),
+                        "queued": 0, "avg_confidence": [],
+                    }
+                banks[bank]["encounters"] += 1
+                banks[bank]["total_txns"] += row.get("transaction_count", 0)
+                banks[bank]["total_pages"] += row.get("page_count", 0)
+                banks[bank]["avg_confidence"].append(row.get("avg_confidence", 0))
+                if row.get("queued_for_labeling"):
+                    banks[bank]["queued"] += 1
+        except Exception as e:
+            logger.debug(f"Supabase bank query failed: {e}")
+
+    # Also check local queue
+    from pathlib import Path as P
+    queue_dir = P(__file__).resolve().parent / "data" / "queue"
+    if queue_dir.exists():
+        for qf in queue_dir.glob("*.json"):
+            try:
+                with open(qf) as f:
+                    meta = json.load(f)
+                bank = meta.get("bank_format", "unknown")
+                if bank not in banks:
+                    banks[bank] = {
+                        "encounters": 0, "total_txns": 0, "total_pages": 0,
+                        "is_trained": False, "queued": 0, "avg_confidence": [],
+                    }
+                if meta.get("status") == "pending":
+                    banks[bank]["queued"] += 1
+            except Exception:
+                pass
+
+    # Finalize averages
+    for bank in banks:
+        confs = banks[bank]["avg_confidence"]
+        banks[bank]["avg_confidence"] = round(sum(confs) / len(confs), 4) if confs else 0
+
+    # Sort: unseen banks first, then by encounter count
+    sorted_banks = dict(sorted(
+        banks.items(),
+        key=lambda x: (x[1]["is_trained"], -x[1]["encounters"])
+    ))
+
+    return {
+        "banks": sorted_banks,
+        "total_trained": sum(1 for b in banks.values() if b["is_trained"]),
+        "total_unseen": sum(1 for b in banks.values() if not b["is_trained"]),
+        "total_queued": sum(b["queued"] for b in banks.values()),
+    }
 
 
 @app.get("/v1/feedback/flagged")

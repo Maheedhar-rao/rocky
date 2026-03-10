@@ -270,16 +270,27 @@ def align_page(words: list, transactions: list) -> list:
 
         # Step 3: Tag date token(s)
         tags[date_idx] = "B-DATE"
-        # Check if date spans multiple tokens (e.g., "Jan" "15")
-        if date_idx + 1 < len(words) and word_to_row.get(date_idx + 1) == date_row:
-            next_text = words[date_idx + 1]["text"]
-            if re.match(r"^\d{1,2}$", next_text) or next_text in (",", "/", "-"):
-                tags[date_idx + 1] = "I-DATE"
-                # One more for year?
-                if date_idx + 2 < len(words) and word_to_row.get(date_idx + 2) == date_row:
-                    t = words[date_idx + 2]["text"]
-                    if re.match(r"^\d{2,4}$", t) or t in (",", "/", "-"):
-                        tags[date_idx + 2] = "I-DATE"
+        # Scan forward for multi-token dates (e.g., "Jan" "15", "01" "/" "15" "/" "2024")
+        # Date continuation tokens: digits, separators, month names, year numbers
+        _DATE_SEPS = {",", "/", "-", "."}
+        pos = date_idx + 1
+        while pos < len(words) and word_to_row.get(pos) == date_row:
+            t = words[pos]["text"]
+            t_stripped = t.rstrip(",.")
+            is_day_or_year = bool(re.match(r"^\d{1,4},?$", t))
+            is_separator = t in _DATE_SEPS
+            is_month = t_stripped.lower().rstrip(".") in {
+                "jan", "feb", "mar", "apr", "may", "jun",
+                "jul", "aug", "sep", "oct", "nov", "dec",
+                "january", "february", "march", "april",
+                "june", "july", "august", "september",
+                "october", "november", "december",
+            }
+            if is_day_or_year or is_separator or is_month:
+                tags[pos] = "I-DATE"
+                pos += 1
+            else:
+                break
 
         # Step 4: Tag amount token
         tags[amount_idx] = "B-AMOUNT"
@@ -312,10 +323,10 @@ def align_page(words: list, transactions: list) -> list:
                         tags[word_idx] = "I-DESC"
 
         # Step 6: Tag balance (if present, usually after amount on same row)
+        balance_idx = -1
         if balance is not None:
             balance_vars = _amount_variations(balance)
             best_bal_score = 0
-            balance_idx = -1
 
             for var in balance_vars:
                 for i in row_word_indices:
@@ -333,6 +344,23 @@ def align_page(words: list, transactions: list) -> list:
 
             if balance_idx >= 0:
                 tags[balance_idx] = "B-BALANCE"
+
+        # Fallback: if no balance was tagged but row has another amount-like token
+        # after the tagged amount, tag the rightmost one as B-BALANCE.
+        # This matches the heuristic in label_rules.py for statements with
+        # a running balance column.
+        if balance_idx < 0:
+            amount_re = re.compile(r"^\$?[-\(]?\d{1,3}(?:,\d{3})*\.\d{2}[-\)]?$")
+            rightmost_amount_idx = -1
+            for i in row_word_indices:
+                if i == amount_idx or tags[i] != "O":
+                    continue
+                if amount_re.match(words[i]["text"]):
+                    # Pick rightmost by x-position
+                    if rightmost_amount_idx < 0 or words[i]["bbox"][0] > words[rightmost_amount_idx]["bbox"][0]:
+                        rightmost_amount_idx = i
+            if rightmost_amount_idx >= 0:
+                tags[rightmost_amount_idx] = "B-BALANCE"
 
     return tags
 

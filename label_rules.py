@@ -228,22 +228,23 @@ def tag_page(words: list) -> list:
 
             # Tag date token(s)
             tags[date_orig] = "B-DATE"
-            # Check for multi-token date (month name + day, or date parts)
-            if _is_month_name(words[date_orig]["text"]):
-                # Month name date — tag the day number as I-DATE
-                if date_pos + 1 < len(row):
-                    next_orig = row[date_pos + 1][0]
-                    next_text = words[next_orig]["text"]
-                    if re.match(r"^\d{1,2},?$", next_text):
-                        tags[next_orig] = "I-DATE"
-                        date_pos += 1  # Advance past date
-                        # Check for year token
-                        if date_pos + 1 < len(row):
-                            year_orig = row[date_pos + 1][0]
-                            year_text = words[year_orig]["text"]
-                            if re.match(r"^\d{2,4}$", year_text):
-                                tags[year_orig] = "I-DATE"
-                                date_pos += 1
+            # Scan forward for multi-token dates:
+            # - Month name + day + optional year: "Jan" "15" "2024"
+            # - Numeric parts split by OCR: "01" "/" "15" "/" "2024"
+            _DATE_SEPS = {",", "/", "-", "."}
+            scan_pos = date_pos + 1
+            while scan_pos < len(row):
+                next_orig = row[scan_pos][0]
+                next_text = words[next_orig]["text"]
+                is_day_or_year = bool(re.match(r"^\d{1,4},?$", next_text))
+                is_separator = next_text in _DATE_SEPS
+                is_month = _is_month_name(next_text)
+                if is_day_or_year or is_separator or is_month:
+                    tags[next_orig] = "I-DATE"
+                    date_pos = scan_pos
+                    scan_pos += 1
+                else:
+                    break
 
             # Sort amounts by X position (left to right)
             amounts.sort(key=lambda a: a[2])
