@@ -30,3 +30,11 @@ spending_report.json
 # IDE
 .vscode/
 .idea/
+
+# Node (not part of this Python service)
+node_modules/
+package-lock.json
+
+# VLM tooling artifacts (training/eval scratch)
+data/vlm/
+preds_*.jsonl

@@ -94,8 +94,21 @@ def _extract_words_pdfplumber(page) -> list:
 
 
 def _extract_words_ocr(image: Image.Image) -> list:
-    import pytesseract
-    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    """Best-effort OCR. Returns [] if tesseract is unavailable or errors.
+
+    OCR is a fallback for image-only pages; a flaky/misconfigured tesseract
+    (e.g. TesseractNotFoundError, or a UnicodeDecodeError on its stderr) must
+    never crash the whole PDF parse — the page just proceeds with whatever
+    pdfplumber words it has.
+    """
+    try:
+        import pytesseract
+        data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    except Exception as e:  # noqa: BLE001 — OCR is optional, degrade gracefully
+        import logging
+        logging.getLogger("statement-parser").warning(f"OCR fallback unavailable, skipping: {e}")
+        return []
+
     iw, ih = image.size
     result = []
     for i in range(len(data["text"])):
@@ -207,22 +220,10 @@ def _build_transaction(fields: dict, confidences: list, page_idx: int) -> Option
 
 CONFIDENCE_THRESHOLD = 0.75  # transactions below this get flagged
 
-# Common bank identifiers for feedback grouping
-_BANK_PATTERNS = {
-    "chase": "Chase", "jpmorgan": "Chase",
-    "wells fargo": "Wells Fargo", "wellsfargo": "Wells Fargo",
-    "bank of america": "Bank of America", "bankofamerica": "Bank of America",
-    "citibank": "Citibank", "citi ": "Citibank",
-    "us bank": "US Bank", "u.s. bank": "US Bank",
-    "pnc": "PNC", "td bank": "TD Bank",
-    "capital one": "Capital One", "truist": "Truist",
-    "regions": "Regions", "keybank": "KeyBank",
-    "comerica": "Comerica", "citizens": "Citizens",
-    "navy federal": "Navy Federal", "usaa": "USAA",
-    "huntington": "Huntington", "m&t bank": "M&T Bank",
-    "fifth third": "Fifth Third", "zions": "Zions",
-    "bbva": "BBVA", "bmo": "BMO",
-}
+# Common bank identifiers for feedback grouping.
+# Single source of truth lives in bank_patterns.py (lightweight, no ML deps) so
+# the segregator's PLAN phase can reuse it without importing this module/torch.
+from bank_patterns import BANK_PATTERNS as _BANK_PATTERNS
 
 
 def _detect_bank_format(page_words: dict) -> str:
