@@ -16,4 +16,5 @@ else
 fi
 
 echo "Starting FastAPI server on port ${PORT:-7860}..."
-exec uvicorn app:app --host 0.0.0.0 --port "${PORT:-7860}" --workers 1
+# main:app = production API (app:app) + segregator mounted at /segregator
+exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-7860}" --workers 1

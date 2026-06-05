@@ -196,7 +196,7 @@ go.addEventListener('click',async()=>{
   go.disabled=true; go.textContent='Counting…';
   const fd=new FormData(); files.forEach(f=>fd.append('files',f));
   try{
-    const r=await fetch('/count',{method:'POST',body:fd});
+    const r=await fetch('count',{method:'POST',body:fd});
     const d=await r.json();
     document.getElementById('kPdfs').textContent=d.pdf_count;
     document.getElementById('kPages').textContent=d.total_pages;
@@ -218,7 +218,7 @@ goA.addEventListener('click',async()=>{
   goA.disabled=true; goA.textContent='Analyzing… (first run loads the model)';
   const fd=new FormData(); files.forEach(f=>fd.append('files',f));
   try{
-    const r=await fetch('/analyze',{method:'POST',body:fd});
+    const r=await fetch('analyze',{method:'POST',body:fd});
     const d=await r.json();
     const t=d.timings_ms||{}, s=d.summary||{};
     document.getElementById('aTxns').textContent=(d.transactions||[]).length;
