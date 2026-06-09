@@ -6,6 +6,8 @@ models/credit_debit/
 # Environment
 .env
 venv/
+.venv/
+.venv*/
 __pycache__/
 *.pyc
 .pytest_cache/

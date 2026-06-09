@@ -408,8 +408,95 @@ _CREDIT_SECTION_KW = {
 }
 
 
+_MONEY_WORD_RE = re.compile(r"\$?-?\(?[\d,]+\.\d{2}\)?-?")
+
+
+def _classify_by_column_position(transactions: list, page_words: dict) -> None:
+    """Pass 0 — set credit/debit from WHICH money column an amount sits in.
+
+    For column-layout statements (Deposits/Credits and Withdrawals/Debits as
+    side-by-side columns, e.g. Wells Fargo), the column an amount falls under is
+    the definitive credit/debit signal — far more reliable than balance deltas
+    (frequently end-of-day only) or text/FFN heuristics, both of which mislabel
+    these statements wholesale. Uses the normalized word bboxes the model
+    already has. No-op for statements without separate credit & debit columns.
+    """
+    if not page_words:
+        return
+
+    # Per-page column x-centers from the transaction-table header tokens.
+    page_cols = {}
+    for page, words in page_words.items():
+        credit_x = debit_x = balance_x = None
+        for w in words:
+            t = w["text"].strip().lower()
+            bb = w["bbox"]
+            xc = (bb[0] + bb[2]) / 2
+            if t in ("credits", "deposits/", "credit") and credit_x is None:
+                credit_x = xc
+            elif t in ("debits", "withdrawals/", "debit") and debit_x is None:
+                debit_x = xc
+            elif t == "balance" and xc > 400 and balance_x is None:
+                balance_x = xc
+        if credit_x is not None and debit_x is not None:
+            if balance_x is None:
+                balance_x = debit_x + (debit_x - credit_x)
+            page_cols[page] = (credit_x, debit_x, balance_x)
+
+    if not page_cols:
+        return  # not a credit/debit column layout — leave to other passes
+
+    # Money-word x-centers per relevant page.
+    money_by_page = {}
+    for page, words in page_words.items():
+        if page not in page_cols:
+            continue
+        vals = []
+        for w in words:
+            s = w["text"].strip()
+            if _MONEY_WORD_RE.fullmatch(s):
+                bb = w["bbox"]
+                vals.append((abs(_parse_amount(s)), (bb[0] + bb[2]) / 2))
+        money_by_page[page] = vals
+
+    for t in transactions:
+        cols = page_cols.get(t.page)
+        if cols is None:
+            continue
+        credit_x, debit_x, balance_x = cols
+        # A money word only counts when it sits WITHIN a column band, not merely
+        # nearest to one — otherwise a dollar amount embedded in a description
+        # (e.g. the "$39.49" in an overdraft-fee line) is mistaken for a column
+        # value. Band = a fraction of the gap between adjacent columns.
+        gaps = [g for g in (debit_x - credit_x, balance_x - debit_x) if g > 0]
+        col_tol = (min(gaps) * 0.55) if gaps else 50.0
+        target = round(abs(t.amount), 2)
+        in_credit = in_debit = False
+        for val, xc in money_by_page.get(t.page, []):
+            if abs(val - target) > 0.005:
+                continue
+            col, dist = min(
+                (("credit", abs(xc - credit_x)), ("debit", abs(xc - debit_x)),
+                 ("balance", abs(xc - balance_x))),
+                key=lambda c: c[1],
+            )
+            if dist > col_tol:
+                continue
+            if col == "credit":
+                in_credit = True
+            elif col == "debit":
+                in_debit = True
+        # Only assign when unambiguous (amount appears in exactly one of the two
+        # money columns). Ambiguous/absent → leave for the later passes.
+        if in_credit and not in_debit:
+            t.type = "credit"
+        elif in_debit and not in_credit:
+            t.type = "debit"
+
+
 def _classify_credit_debit(transactions: list, page_words: dict = None) -> list:
     """Classify transactions as credit/debit using hybrid approach:
+    0. Column-position (definitive for side-by-side credit/debit columns)
     1. Sign-based (already set in _build_transaction for negative amounts)
     2. Balance-change method (heuristic Pass 1)
     3. Section-heading method (heuristic Pass 2)
@@ -417,6 +504,9 @@ def _classify_credit_debit(transactions: list, page_words: dict = None) -> list:
     """
     if not transactions:
         return transactions
+
+    # Pass 0: column-position signing (highest priority for column layouts).
+    _classify_by_column_position(transactions, page_words)
 
     # Pass 1 & 2: run balance-change and section-heading heuristics
     # (these only touch "unknown" types, preserving sign-based detection)
